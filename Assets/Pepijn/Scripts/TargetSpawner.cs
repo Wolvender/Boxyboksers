@@ -30,7 +30,7 @@ namespace Boxyboksers.Targets
 
         [Header("Arc placement")]
         [Tooltip("Total width of the spawn arc, in degrees, centred on the player's forward.")]
-        [SerializeField, Range(0f, 300f)] private float arcAngle = 160f;
+        [SerializeField, Range(0f, 300f)] private float arcAngle = 150f;
 
         [Tooltip("Closest / farthest reach of a target from the player, in metres.")]
         [SerializeField, Min(0.1f)] private float minRadius = 0.55f;
