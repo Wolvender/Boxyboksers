@@ -8,6 +8,7 @@ using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.UI;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 
 namespace Boxyboksers.EditorTools
 {
@@ -48,6 +49,8 @@ namespace Boxyboksers.EditorTools
 
             InstantiateDeviceSimulator();
             AddGloves(rig);
+            AddPunchFeedback(rig);
+            EnsurePunchTestDummy(rig);
             DisableRayInteractors(rig);
 
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
@@ -200,6 +203,74 @@ namespace Boxyboksers.EditorTools
             {
                 color = handName.Contains("Left") ? new Color(0.9f, 0.2f, 0.2f) : new Color(0.2f, 0.4f, 0.9f)
             };
+        }
+
+        private static void AddPunchFeedback(GameObject rig)
+        {
+            AddPunchFeedbackForHand(rig.transform, "Left Controller");
+            AddPunchFeedbackForHand(rig.transform, "Right Controller");
+        }
+
+        private static void AddPunchFeedbackForHand(Transform rigRoot, string handName)
+        {
+            Transform hand = FindDeepChild(rigRoot, handName);
+            Transform gloveTransform = hand?.Find("Glove");
+            if (gloveTransform == null) return; // AddGlove already warned if the hand itself was missing
+
+            // HapticImpulsePlayer auto-discovers a controller (IXRHapticImpulseProvider) on the
+            // same GameObject when no explicit input action is assigned — so putting it directly
+            // on the hand, alongside the ActionBasedController, wires it up with no extra config.
+            var hapticPlayer = hand.GetComponent<HapticImpulsePlayer>();
+            if (hapticPlayer == null)
+                hapticPlayer = Undo.AddComponent<HapticImpulsePlayer>(hand.gameObject);
+
+            GameObject glove = gloveTransform.gameObject;
+            EnsureGloveTag(glove);
+
+            var feedback = glove.GetComponent<PunchImpactFeedback>();
+            if (feedback == null)
+            {
+                feedback = Undo.AddComponent<PunchImpactFeedback>(glove);
+                var audioSource = glove.GetComponent<AudioSource>();
+                audioSource.playOnAwake = false;
+                audioSource.spatialBlend = 1f;
+            }
+
+            var serialized = new SerializedObject(feedback);
+            serialized.FindProperty("hapticPlayer").objectReferenceValue = hapticPlayer;
+            serialized.ApplyModifiedProperties();
+        }
+
+        private static void EnsureGloveTag(GameObject glove)
+        {
+            if (!UnityEditorInternal.InternalEditorUtility.tags.Contains("Glove"))
+                UnityEditorInternal.InternalEditorUtility.AddTag("Glove");
+            glove.tag = "Glove";
+        }
+
+        private static void EnsurePunchTestDummy(GameObject rig)
+        {
+            const string dummyName = "Punch Test Dummy (temporary)";
+            if (GameObject.Find(dummyName) != null) return;
+
+            GameObject dummy = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            dummy.name = dummyName;
+            Undo.RegisterCreatedObjectUndo(dummy, "Add Punch Test Dummy");
+            dummy.transform.localScale = Vector3.one * 0.3f;
+            dummy.transform.position = rig.transform.position + rig.transform.forward * 0.6f + Vector3.up * 1.3f;
+
+            var rb = dummy.AddComponent<Rigidbody>();
+            rb.mass = 1f;
+            rb.linearDamping = 0.5f;
+
+            // CreatePrimitive assigns the built-in Standard-shader material, which renders
+            // magenta under URP — swap it for a URP/Lit material so it's actually visible.
+            dummy.GetComponent<Renderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                color = new Color(0.9f, 0.8f, 0.2f)
+            };
+
+            Debug.Log($"[PlayerRigSetup] Added '{dummyName}' so you have something to punch and verify impact sound/haptics — delete it once real targets exist.");
         }
 
         private static Transform FindDeepChild(Transform parent, string name)
